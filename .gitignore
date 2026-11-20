@@ -8,3 +8,4 @@ __pycache__
 .env
 .venv/
 venv/
+ai_expense_claim/public/dist/

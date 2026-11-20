@@ -22,6 +22,7 @@ https://github.com/user-attachments/assets/e6fe0cf7-9f9a-45c9-836d-a50048c627b1
 ```bash
 bench get-app https://github.com/stymrj/ai-expense-claim.git --branch main
 bench --site your-site install-app ai_expense_claim
+bench build --app ai_expense_claim
 ```
 
 ### Configuration

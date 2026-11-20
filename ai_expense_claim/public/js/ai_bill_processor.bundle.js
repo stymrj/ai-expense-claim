@@ -17,12 +17,8 @@ window.show_ai_bill_processor = function(frm) {
 		secondary_action: () => dialog.hide()
 	});
 
+	dialog.$wrapper.addClass("ai-bill-processor-dialog");
 	dialog.show();
-	
-	dialog.$wrapper.find('.modal-body').css({
-		'max-height': '70vh',
-		'overflow-y': 'auto'
-	});
 	
 	render_upload_ui();
 	update_button_state();
@@ -43,9 +39,24 @@ window.show_ai_bill_processor = function(frm) {
 		const dropzone = wrapper.find("#ai_dropzone");
 		const file_input = wrapper.find("#ai_file_input");
 
+		dropzone.attr({
+			role: "button",
+			tabindex: "0",
+			"aria-controls": "ai_file_input",
+			"aria-label": __("Choose receipts or drop files here")
+		});
+		file_input.attr("aria-label", __("Select receipt files"));
+
 		dropzone.on("click", (e) => {
 			e.preventDefault();
 			file_input[0].click();
+		});
+
+		dropzone.on("keydown", (e) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				file_input[0].click();
+			}
 		});
 
 		file_input.on("change", (e) => {
@@ -81,6 +92,11 @@ window.show_ai_bill_processor = function(frm) {
 		const style = document.createElement("style");
 		style.id = "ai-upload-styles";
 		style.textContent = `
+			.ai-bill-processor-dialog .modal-body {
+				max-height: 70vh;
+				overflow-y: auto;
+				-webkit-overflow-scrolling: touch;
+			}
 			.ai-dropzone {
 				border: 2px dashed var(--border-color);
 				border-radius: var(--border-radius-lg);
@@ -187,6 +203,42 @@ window.show_ai_bill_processor = function(frm) {
 				margin: 16px 0 8px;
 				font-size: 12px;
 				color: var(--text-muted);
+			}
+			@media (max-width: 767px) {
+				.ai-bill-processor-dialog .modal-dialog {
+					width: calc(100% - 1rem);
+					max-width: none;
+					margin: 0.5rem auto;
+				}
+				.ai-bill-processor-dialog .modal-body {
+					max-height: calc(100vh - 9rem);
+					max-height: calc(100dvh - 9rem);
+					padding: 1rem;
+				}
+				.ai-bill-processor-dialog .ai-dropzone {
+					padding: 24px 12px;
+					touch-action: manipulation;
+				}
+				.ai-bill-processor-dialog .ai-file-item {
+					gap: 8px;
+					padding: 8px;
+				}
+				.ai-bill-processor-dialog .ai-drag-handle {
+					display: none;
+				}
+				.ai-bill-processor-dialog .ai-file-thumb {
+					width: 40px;
+					height: 40px;
+				}
+				.ai-bill-processor-dialog .ai-file-actions .btn,
+				.ai-bill-processor-dialog .modal-footer .btn {
+					min-width: 44px;
+					min-height: 44px;
+				}
+				.ai-bill-processor-dialog .grid-body {
+					overflow-x: auto;
+					-webkit-overflow-scrolling: touch;
+				}
 			}
 		`;
 		document.head.appendChild(style);
@@ -471,6 +523,7 @@ async function show_results_dialog(frm, groups) {
 		secondary_action: () => review.hide()
 	});
 
+	review.$wrapper.addClass("ai-bill-processor-dialog");
 	review.show();
 
 	const grid = review.fields_dict.expenses.grid;
