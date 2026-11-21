@@ -1,14 +1,14 @@
 app_name = "ai_expense_claim"
 app_title = "Ai Expense Claim"
-app_publisher = "Manav Mandli"
+app_publisher = "Satyam Raj"
 app_description = "Frappe AI Expense Claim"
-app_email = "manavamndli2990@gmail.com"
+app_email = "sstymrj@gmail.com"
 app_license = "mit"
 
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["erpnext"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
@@ -86,6 +86,12 @@ doctype_js = {
 
 # before_install = "ai_expense_claim.install.before_install"
 after_install = "ai_expense_claim.install.after_install"
+
+doc_events = {
+	"Expense Claim": {
+		"on_update": "ai_expense_claim.api.expense.link_claim_attachments",
+	}
+}
 
 # Uninstallation
 # ------------

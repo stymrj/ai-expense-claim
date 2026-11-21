@@ -1,6 +1,12 @@
 window.show_ai_bill_processor = function(frm) {
+	if (frm.doc.docstatus !== 0) {
+		frappe.msgprint(__("Receipts can only be added to a draft Expense Claim."));
+		return;
+	}
+
 	let files = [];
 	let processing = false;
+	let sortable = null;
 
 	const dialog = new frappe.ui.Dialog({
 		title: __("AI Bill Processor"),
@@ -16,6 +22,7 @@ window.show_ai_bill_processor = function(frm) {
 		secondary_action_label: __("Cancel"),
 		secondary_action: () => dialog.hide()
 	});
+	
 
 	dialog.$wrapper.addClass("ai-bill-processor-dialog");
 	dialog.show();
@@ -31,7 +38,7 @@ window.show_ai_bill_processor = function(frm) {
 			<div class="ai-dropzone" id="ai_dropzone">
 				<div class="ai-drop-icon">${frappe.utils.icon("upload", "xl")}</div>
 				<p class="ai-drop-label">${__("Click or drop files here")}</p>
-				<p class="ai-drop-hint">${__("Supports PDF and images (JPG, PNG, WEBP)")}</p>
+				<p class="ai-drop-hint">${__("PDF, JPG, PNG, or WEBP. Up to 10 files, 8 MB each.")}</p>
 			</div>
 			<div id="ai_file_list_container"></div>
 		`);
@@ -246,8 +253,30 @@ window.show_ai_bill_processor = function(frm) {
 
 	function add_files(new_files) {
 		const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+		const max_files = 10;
+		const max_bytes = 8 * 1024 * 1024;
+		let reported_limit = false;
 
 		new_files.forEach(file => {
+			if (files.length >= max_files) {
+				if (!reported_limit) {
+					reported_limit = true;
+					frappe.show_alert({
+						message: __("You can process up to {0} receipts at a time.", [max_files]),
+						indicator: "orange"
+					});
+				}
+				return;
+			}
+
+			if (file.size > max_bytes) {
+				frappe.show_alert({
+					message: __('"{0}" is larger than 8 MB.', [file.name]),
+					indicator: "orange"
+				});
+				return;
+			}
+
 			if (!allowed.includes(file.type)) {
 				frappe.show_alert({
 					message: __('"{0}" is not supported. Use PDF or image files.', [file.name]),
@@ -257,6 +286,10 @@ window.show_ai_bill_processor = function(frm) {
 			}
 
 			if (files.find(f => f.name === file.name && f.size === file.size)) {
+				frappe.show_alert({
+					message: __('"{0}" is already in the list.', [file.name]),
+					indicator: "orange"
+				});
 				return;
 			}
 
@@ -330,14 +363,20 @@ window.show_ai_bill_processor = function(frm) {
 	}
 
 	function init_sortable() {
+		if (sortable) {
+			sortable.destroy();
+			sortable = null;
+		}
+
 		const list_el = dialog.fields_dict.upload_html.$wrapper.find("#ai_sortable_list")[0];
 		if (window.Sortable && list_el && files.length > 1) {
-			new window.Sortable(list_el, {
+			sortable = new window.Sortable(list_el, {
 				animation: 150,
 				handle: ".ai-drag-handle",
 				onEnd(evt) {
 					const moved = files.splice(evt.oldIndex, 1)[0];
 					files.splice(evt.newIndex, 0, moved);
+					setTimeout(render_file_list, 0);
 				}
 			});
 		}
@@ -378,22 +417,25 @@ window.show_ai_bill_processor = function(frm) {
 				}
 				
 				if (low_confidence_files.length > 0) {
-					const warnings = low_confidence_files.map(f => 
-						`<li><strong>${f.file}</strong>: ${f.reason} (${f.confidence}% confidence)</li>`
+					const warnings = low_confidence_files.map(f =>
+						`<li><strong>${frappe.utils.escape_html(f.file || "")}</strong>: ${frappe.utils.escape_html(f.reason || "")} (${frappe.utils.escape_html(String(f.confidence ?? ""))}%)</li>`
 					).join("");
 					frappe.msgprint({
 						title: __("Some Files Skipped"),
 						message: `
-							<p>${__("The following files were skipped due to low confidence:")}</p>
+							<p>${__("The following files were skipped because the read was not confident enough:")}</p>
 							<ul>${warnings}</ul>
 						`,
 						indicator: "orange"
 					});
 					
-					if (groups.length === 0) return;
+					if (groups.length === 0) {
+						dialog.show();
+						return;
+					}
 				}
 				
-				show_results_dialog(frm, groups);
+				show_results_dialog(frm, groups, response.group_same_date_same_type_expenses);
 			})
 			.catch(err => {
 				dialog.show();
@@ -409,19 +451,42 @@ window.show_ai_bill_processor = function(frm) {
 	}
 
 	function file_to_base64(file) {
-		return new Promise((resolve) => {
+		return new Promise((resolve, reject) => {
 			const reader = new FileReader();
 			reader.onload = (e) => resolve({
 				name: file.name,
 				data: e.target.result,
 				type: file.type
 			});
+			reader.onerror = () => reject(new Error(__("Could not read {0}", [file.name])));
 			reader.readAsDataURL(file);
 		});
 	}
 };
 
-async function show_results_dialog(frm, groups) {
+async function show_results_dialog(frm, groups, group_same_type) {
+	let applied = false;
+	let form_updated = false;
+
+	function names_from(rows) {
+		const names = [];
+		(rows || []).forEach((row) => {
+			(row.file_doc_names || row._file_doc_names || []).forEach((name) => name && names.push(name));
+			const attachment = row.attachment_name || row._attachment_name;
+			if (attachment) names.push(attachment);
+		});
+		return [...new Set(names)];
+	}
+
+	function discard_files(names) {
+		const unique = [...new Set((names || []).filter(Boolean))];
+		if (!unique.length) return;
+		frappe.call({
+			method: "ai_expense_claim.api.expense.discard_processed_files",
+			args: { file_doc_names: JSON.stringify(unique) },
+		});
+	}
+
 	const review = new frappe.ui.Dialog({
 		title: __("Review Extracted Expenses"),
 		size: "extra-large",
@@ -436,46 +501,56 @@ async function show_results_dialog(frm, groups) {
 				in_place_edit: true,
 				fields: [
 					{ fieldname: "expense_date", fieldtype: "Date", label: __("Date"), in_list_view: 1, reqd: 1, columns: 1 },
-					{ fieldname: "expense_type", fieldtype: "Link", options: "Expense Claim Type", label: __("Type"), in_list_view: 1, columns: 2 },
+					{ fieldname: "expense_type", fieldtype: "Link", options: "Expense Claim Type", label: __("Type"), in_list_view: 1, reqd: 1, columns: 2 },
 					{ fieldname: "amount", fieldtype: "Currency", label: __("Amount"), in_list_view: 1, columns: 1 },
 					{ fieldname: "description", fieldtype: "Small Text", label: __("Description"), in_list_view: 1, columns: 3 },
 					{ fieldname: "custom_attachment", fieldtype: "Attach", label: __("Attachment"), in_list_view: 1, read_only: 1, columns: 2 },
 				],
 			}
 		],
-		primary_action_label: __("Apply to Expense Claim"),
+		primary_action_label: __("Add to Expense Claim"),
 		primary_action: async function() {
 			const selected = grid.get_selected_children();
 
 			if (!selected.length) {
-				frappe.show_alert({ message: __("Select at least one expense to apply."), indicator: "orange" });
+				frappe.show_alert({ message: __("Select at least one expense to add."), indicator: "orange" });
+				return;
+			}
+
+			if (selected.some((row) => !row.expense_date || !row.expense_type || !(parseFloat(row.amount) > 0))) {
+				frappe.show_alert({
+					message: __("Each selected row needs a date, an expense type, and an amount."),
+					indicator: "orange"
+				});
 				return;
 			}
 
 			const apply_btn = review.get_primary_btn();
-			apply_btn.prop("disabled", true).text(__("Applying..."));
+			apply_btn.prop("disabled", true).text(__("Adding..."));
 
 			try {
 				for (const row of selected) {
-					// Check for existing row with same date + expense type
-					const existing = (frm.doc.expenses || []).find(
-						e => e.expense_date === row.expense_date && e.expense_type === row.expense_type
-					);
+					const existing = group_same_type
+						? (frm.doc.expenses || []).find(
+							(entry) => entry.expense_date === row.expense_date && entry.expense_type === row.expense_type
+						)
+						: null;
 
 					if (existing) {
-						// Append to existing row
 						existing.amount = parseFloat(existing.amount || 0) + parseFloat(row.amount || 0);
 						if (row.description) {
 							existing.description = [existing.description, row.description]
-								.filter(Boolean).join("; ");
+								.filter(Boolean)
+								.join("; ")
+								.slice(0, 500);
 						}
 						if (row.custom_attachment) {
-							if (existing.custom_attachment) {
-								const r = await frappe.call({
+							if (existing.custom_attachment && existing.custom_attachment !== row.custom_attachment) {
+								const merged = await frappe.call({
 									method: "ai_expense_claim.api.expense.merge_attachments_by_url",
 									args: { url1: existing.custom_attachment, url2: row.custom_attachment }
 								});
-								if (r.message) existing.custom_attachment = r.message;
+								if (merged.message) existing.custom_attachment = merged.message;
 							} else {
 								existing.custom_attachment = row.custom_attachment;
 							}
@@ -488,39 +563,63 @@ async function show_results_dialog(frm, groups) {
 						child.description = row.description;
 						if (row.custom_attachment) child.custom_attachment = row.custom_attachment;
 					}
+					form_updated = true;
 				}
 
 				frm.refresh_field("expenses");
+				frm.dirty();
+				applied = true;
 
-				if (frm.doc.name) {
-					const all_file_names = selected
-						.flatMap(r => r._file_doc_names || [])
-						.filter(Boolean);
-					if (all_file_names.length) {
+				if (!frm.is_new() && frm.doc.name) {
+					const keep = [];
+					selected.forEach((row) => {
+						if (row._attachment_name) keep.push(row._attachment_name);
+						else (row._file_doc_names || []).forEach((name) => name && keep.push(name));
+					});
+					if (keep.length) {
 						await frappe.call({
 							method: "ai_expense_claim.api.expense.link_files_to_claim",
 							args: {
-								file_doc_names: JSON.stringify(all_file_names),
+								file_doc_names: JSON.stringify([...new Set(keep)]),
 								docname: frm.doc.name
 							}
 						});
 					}
 				}
 
+				const selected_names = new Set(selected.map((row) => row.name));
+				const leftovers = [];
+				(grid.df.data || []).forEach((row) => {
+					const source_names = row._file_doc_names || [];
+					const merged = row._attachment_name;
+					if (!selected_names.has(row.name)) {
+						leftovers.push(...source_names);
+						if (merged) leftovers.push(merged);
+						return;
+					}
+					if (merged && !source_names.includes(merged)) leftovers.push(...source_names);
+				});
+				discard_files(leftovers);
+
 				review.hide();
 				frappe.show_alert({
-					message: __("{0} expense item(s) applied", [selected.length]),
+					message: frm.is_new()
+						? __("{0} expense row(s) added. Save the claim to keep the receipts.", [selected.length])
+						: __("{0} expense row(s) added. Save the claim.", [selected.length]),
 					indicator: "green"
 				});
-			} catch(err) {
+			} catch (err) {
 				console.error(err);
-				frappe.show_alert({ message: __("Failed to apply expenses. Please try again."), indicator: "red" });
+				frappe.show_alert({ message: __("Could not add the expenses. Try again."), indicator: "red" });
 			} finally {
-				apply_btn.prop("disabled", false).text(__("Apply to Expense Claim"));
+				apply_btn.prop("disabled", false).text(__("Add to Expense Claim"));
 			}
 		},
 		secondary_action_label: __("Cancel"),
-		secondary_action: () => review.hide()
+		secondary_action: () => review.hide(),
+		onhide() {
+			if (!applied && !form_updated) discard_files(names_from(groups));
+		}
 	});
 
 	review.$wrapper.addClass("ai-bill-processor-dialog");
@@ -538,11 +637,11 @@ async function show_results_dialog(frm, groups) {
 		description: g.description,
 		custom_attachment: g.attachment_url || "",
 		_file_doc_names: g.file_doc_names || [],
+		_attachment_name: g.attachment_name || "",
 	}));
 	grid.refresh();
-	
+
 	requestAnimationFrame(() => {
-		// Pre-select all rows
 		grid.grid_rows.forEach(row => {
 			if (row.doc) row.doc.__checked = 1;
 		});

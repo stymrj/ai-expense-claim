@@ -20,6 +20,7 @@
  ],
  "fields": [
   {
+   "description": "Stored on the server. People who can create Expense Claims can process receipts without seeing this key.",
    "fieldname": "openai_api_key",
    "fieldtype": "Password",
    "in_list_view": 1,
@@ -76,7 +77,7 @@
   },
   {
    "default": "300",
-   "description": "Maximum tokens allowed for AI bill processing.",
+   "description": "Output limit for one receipt. Use 800 if extraction comes back empty. Allowed range is 200 to 4096.",
    "fieldname": "max_token",
    "fieldtype": "Int",
    "label": "Max Token",

@@ -173,8 +173,8 @@ async function process_bills() {
 		
 		// Show warnings for low confidence files
 		if (low_confidence_files.length > 0) {
-			const warnings = low_confidence_files.map(f => 
-				`<li><strong>${f.file}</strong>: ${f.reason} (${f.confidence}% confidence)</li>`
+			const warnings = low_confidence_files.map((f) =>
+				`<li><strong>${frappe.utils.escape_html(f.file || "")}</strong>: ${frappe.utils.escape_html(f.reason || "")} (${frappe.utils.escape_html(String(f.confidence ?? ""))}%)</li>`
 			).join("");
 			frappe.msgprint({
 				title: __("Some Files Skipped"),

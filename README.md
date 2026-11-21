@@ -21,6 +21,7 @@
 - [Install](#install)
 - [Configure](#configure)
 - [Use it](#use-it)
+- [Troubleshooting](#troubleshooting)
 - [How processing works](#how-processing-works)
 - [Privacy and security](#privacy-and-security)
 - [Mobile use](#mobile-use)
@@ -45,7 +46,7 @@
 ## Requirements
 
 - Frappe **v15 or v16**
-- ERPNext/HRMS installed with the **Expense Claim** and **Expense Claim Type** DocTypes
+- ERPNext installed, with the **Expense Claim** and **Expense Claim Type** DocTypes
 - Python **3.10 or later**
 - An OpenAI API key
 - Poppler utilities for scanned-PDF image conversion (for example, `poppler-utils` on Ubuntu)
@@ -79,7 +80,7 @@ sudo apt-get install -y poppler-utils
 4. Choose whether AI-processed attachments should be private.
 5. Optionally enable same-date/type grouping or payment-proof matching. Set the amount tolerance when matching is enabled.
 
-The app uses the Expense Claim Types configured in your ERPNext site. On installation, it adds default types for Food, Travel, Accommodation, Fuel, and Communication when they do not already exist.
+The app uses the Expense Claim Types configured in your ERPNext site. On installation, it adds Food, Travel, Accommodation, Fuel, Communication, and Others when they do not already exist. Others is used when a receipt does not match a more specific type.
 
 ## Use it
 
@@ -87,10 +88,20 @@ The app uses the Expense Claim Types configured in your ERPNext site. On install
 2. Select **Upload & Process AI-Based Bills**.
 3. Choose or drop receipt images and PDFs.
 4. Select **Process with AI**.
-5. Review the extracted values, correct anything needed, and apply the selected rows to the claim.
+5. Review the extracted values, correct anything needed, and select **Add to Expense Claim**.
 6. Save and submit the claim through your normal ERPNext approval workflow.
 
-The app does not automatically submit or approve claims.
+The app does not automatically submit or approve claims. The upload button is shown only on a draft. After the rows are added, save the claim so the receipt files stay attached.
+
+## Troubleshooting
+
+- **The processor is not loaded:** from the bench, run `bench build --app ai_expense_claim`, then hard-refresh the desk.
+- **The button is missing:** open a draft Expense Claim. Submitted and cancelled claims cannot take new receipts.
+- **Permission error on process:** the user needs create or write permission on Expense Claim. Only a System Manager can open **AI Expense Settings**.
+- **API key rejected:** open **AI Expense Settings** and save a valid OpenAI key. The key stays on the server.
+- **Nothing extracted from a scanned PDF:** install Poppler on the server (`poppler-utils` on Ubuntu) and restart the bench.
+- **Extraction comes back empty:** raise **Max Token** to 800 and try a clearer image.
+- **File rejected:** use PDF, JPG, PNG, or WEBP, at most 10 files and 8 MB each.
 
 ## How processing works
 
